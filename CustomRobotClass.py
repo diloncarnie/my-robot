@@ -5,7 +5,7 @@ import os
 
 class CustomRobot(ERobot):
     def __init__(self):
-        urdf_path = os.path.abspath("output/robot-arm.urdf")
+        urdf_path = os.path.abspath("URDF/robot-arm.urdf")
         links, name, urdf_string, urdf_filepath = self.URDF_read(urdf_path)
         super().__init__(
             links,
