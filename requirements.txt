@@ -1,0 +1,7 @@
+coppeliasim-zmqremoteapi-client
+numpy<2.0.0
+spatialmath-python
+roboticstoolbox-python
+opencv-python==4.8.0.76
+opencv-python-headless==4.8.0.76
+easyocr
