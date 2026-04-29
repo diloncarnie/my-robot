@@ -1,8 +1,6 @@
 from typing import List
-
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
-
-import  numpy as np
+import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from spatialmath import SE3
@@ -13,12 +11,10 @@ import json
 import os
 from CustomRobotClass import CustomRobot
 
-
-
 SCENE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'simulation-test.ttt')
 JOINT_BASE_PATH = '/RobotArm/joint'
 ROBOT_TIP = '/tip'
-GRIPPER_JOINT_PATH = '/left_drive_joint'  # Adjusted path for root-level import
+GRIPPER_JOINT_PATH = '/left_drive_joint'
 SIMULATED_OBJECTS = ['/Envelope1', '/Envelope2','/Envelope3','/Envelope4']
 JOINTS = 5
 DEFAULT_MAX_VEL_DEG = 360.0
@@ -26,11 +22,9 @@ DEFAULT_MAX_ACCEL_DEG = 360.0
 DEFAULT_MAX_JERK_DEG = 720.0
 reader = easyocr.Reader(['en'], gpu=True)
 
-
 def pose_to_se3(pose: List[float]) -> SE3:
     x, y, z, qx, qy, qz, qw = pose
 
-    # CoppeliaSim pose quaternion order: (qx, qy, qz, qw)
     r00 = 1.0 - 2.0 * (qy * qy + qz * qz)
     r01 = 2.0 * (qx * qy - qz * qw)
     r02 = 2.0 * (qx * qz + qy * qw)
@@ -54,7 +48,6 @@ def pose_to_se3(pose: List[float]) -> SE3:
     )
     return SE3(t, check=False)
 
-
 def move_to_pose(
     sim,
     robot: ERobot,
@@ -73,7 +66,6 @@ def move_to_pose(
     if duration_s <= 0.0:
         raise ValueError('duration_s must be > 0')
   
-    # Dynamically fetch the simulation time step (dt) to guarantee perfect synchronization
     dt = sim.getSimulationTimeStep()
     times = np.arange(0.0, duration_s + 0.5 * dt, dt, dtype=float)
 
@@ -98,7 +90,6 @@ def move_to_pose(
         traj_q = traj.q
         final_q = sol.q
 
- 
     tip_handle = sim.getObject('/tip')
 
     for step_idx, q in enumerate(traj_q):
@@ -128,64 +119,44 @@ def move_to_pose(
 
     return np.array(final_q, dtype=float)
 
-
 def set_gripper(sim, joint_handle, open_state: bool, delay: int = 30, object_name: str = None, make_dynamic: bool = False):
-    """
-    Controls the gripper.
-    open_state: True for 0 deg (open), False for -35 deg (closed).
-    object_name: Optional name of an object to pick up or drop.
-    make_dynamic: If True, toggles object between static (carried) and dynamic (dropped).
-    """
     angle_deg = 0.0 if open_state else -35.0
     angle_rad = np.deg2rad(angle_deg)
-    
-    # Fast motion parameters for the gripper servo
     motion_params = [np.deg2rad(360), np.deg2rad(360), np.deg2rad(720)]
 
-    # IMMEDIATE ACTION for Opening (Drop)
     if object_name and open_state:
         try:
             obj_handle = sim.getObject(object_name)
             sim.setObjectParent(obj_handle, -1, True)
-            
-            # Set mass (3005 = sim.shapefloatparam_mass)
             sim.setObjectFloatParam(obj_handle, 3005, 0.0001)
             
             if make_dynamic:
-                # 3003 = static, 3004 = respondable
-                sim.setObjectInt32Param(obj_handle, 3003, 0) # 0 = dynamic
-                sim.setObjectInt32Param(obj_handle, 3004, 1) # 1 = respondable
-                print(f"Gripper opening: {object_name} released (Dynamic & Respondable, Mass: 0.001).")
+                sim.setObjectInt32Param(obj_handle, 3003, 0)
+                sim.setObjectInt32Param(obj_handle, 3004, 1)
+                print(f"Gripper opening: {object_name} released.")
             else:
-                sim.setObjectInt32Param(obj_handle, 3003, 1) # 1 = static
-                print(f"Gripper opening: {object_name} released (Static, Mass: 0.001).")
+                sim.setObjectInt32Param(obj_handle, 3003, 1)
+                print(f"Gripper opening: {object_name} released.")
         except Exception as e:
-            print(f"Warning: Immediate drop failed for '{object_name}': {e}")
+            print(f"Warning: Drop failed for '{object_name}': {e}")
 
-    # START MOTION
     sim.setJointTargetPosition(joint_handle, float(angle_rad), motion_params)
-    # Step simulation a few times to ensure the command is processed
     for _ in range(delay):
         sim.step()
 
-    # DELAYED ACTION for Closing (Pick up)
     if object_name and not open_state:
         try:
             obj_handle = sim.getObject(object_name)
             gripper_handle = sim.getObject('/RobotGripper')
             sim.setObjectParent(obj_handle, gripper_handle, True)
-            
-            # Set mass and force to static/non-respondable while carried
             sim.setObjectFloatParam(obj_handle, 3005, 0.0001)
-            sim.setObjectInt32Param(obj_handle, 3003, 1) # 1 = static
-            sim.setObjectInt32Param(obj_handle, 3004, 0) # 0 = non-respondable
-            print(f"Gripper closed: {object_name} attached to RobotGripper (Static, Non-respondable, Mass: 0.001).")
+            sim.setObjectInt32Param(obj_handle, 3003, 1)
+            sim.setObjectInt32Param(obj_handle, 3004, 0)
+            print(f"Gripper closed: {object_name} attached.")
         except Exception as e:
-            print(f"Warning: Delayed pick failed for '{object_name}': {e}")
-
+            print(f"Warning: Pick failed for '{object_name}': {e}")
 
 def get_vision_sensor_snapshot(sim, sensor_handle):
-    """Retrieves a single frame from the vision sensor and returns it as an OpenCV image."""
     img, res = sim.getVisionSensorImg(sensor_handle)
     img = np.frombuffer(img, dtype=np.uint8).reshape([res[1], res[0], 3])
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -196,41 +167,32 @@ def load_json_mapping(file_path):
     try:
         with open(file_path, 'r') as f:
             raw_mapping = json.load(f)
-            # Convert string keys back to integers for distance comparison
             height_mapping = {int(k): v for k, v in raw_mapping.items()}
     except FileNotFoundError:
-        print("Error: height_mapping.json not found. Please run extract-height.py first.")
+        print("Error: height_mapping.json not found.")
         height_mapping = None
     return height_mapping
       
 def run_ocr(snapshot):
-    # Run EasyOCR
     results = reader.readtext(snapshot)
-    # We sort so the item with the LOWEST Y-coordinate (top of screen) is first
-    # x[0] is the bbox, x[0][0][1] is the Y-value of the top-left corner
     results.sort(key=lambda x: x[0][0][1])
-    # Load the height mapping from JSON
     height_mapping = load_json_mapping('height_mapping.json')
     
     if not results or not height_mapping:
         return None, None
 
-    # Get the topmost result
     bbox, text, _ = results[0]
     words = text.split()
     
     last_name = words[1]
     sorting_letter = last_name[0].upper()
     
-    # Extract the top-left y-coordinate
     y_coord = int(bbox[0][1])
-    # Find the closest height in the mapping (OCR coordinates can vary slightly)
     closest_y = min(height_mapping.keys(), key=lambda k: abs(k - y_coord))
     assigned_index = height_mapping[closest_y]
 
-    print(f"TARGET: {text} | SORT BY LAST NAME: {sorting_letter} | ASSIGNED INDEX: {assigned_index}")
+    print(f"TARGET: {text} | SORT: {sorting_letter} | INDEX: {assigned_index}")
 
-    # Drawing the Green Box and Label
     top_left = tuple(map(int, bbox[0]))
     bottom_right = tuple(map(int, bbox[2]))
     cv2.rectangle(snapshot, top_left, bottom_right, (0, 255, 0), 2)
@@ -239,11 +201,8 @@ def run_ocr(snapshot):
     
     return sorting_letter, assigned_index
        
-
-
-
 def main(robot: ERobot) -> None:
-    print('Program started')
+    print('Starting simulation')
     client = RemoteAPIClient()
     sim = client.require('sim')
 
@@ -256,18 +215,11 @@ def main(robot: ERobot) -> None:
     for i in range(JOINTS):
         joints.append(sim.getObject(JOINT_BASE_PATH, {'index': i}))
 
- 
-    # Motion constraints for sim.setJointTargetPosition(..., motionParams).
     max_vel = np.deg2rad(np.full(JOINTS, DEFAULT_MAX_VEL_DEG, dtype=float))
     max_accel = np.deg2rad(np.full(JOINTS, DEFAULT_MAX_ACCEL_DEG, dtype=float))
     max_jerk = np.deg2rad(np.full(JOINTS, DEFAULT_MAX_JERK_DEG, dtype=float))
 
-    # Keep joint state in Python (do not fetch from CoppeliaSim between waypoints).
     current_q = np.deg2rad([0, 0, 0, 0, 0])
-    
-    
-    # Start movement to dynamic trajectory waypoints
-    print("Starting Movement")
     
     trajectory_metrics = {
         'times': [],
@@ -277,26 +229,24 @@ def main(robot: ERobot) -> None:
     }
 
     default_position = "/default"
-    w = sim.getObjectPose(sim.getObject(default_position), sim.handle_world) #Go to default position
+    w = sim.getObjectPose(sim.getObject(default_position), sim.handle_world)
     current_q = move_to_pose(sim, robot, joints, w, current_q, max_vel, max_accel, max_jerk, duration_s=2.0, metrics=trajectory_metrics)
     
-    w = sim.getObjectPose(sim.getObject(default_position), sim.handle_world) #Go to default position
+    w = sim.getObjectPose(sim.getObject(default_position), sim.handle_world)
     current_q = move_to_pose(sim, robot, joints, w, current_q, max_vel, max_accel, max_jerk, duration_s=2.0, metrics=trajectory_metrics)
 
-    w = sim.getObjectPose(sim.getObject("/index0"), sim.handle_world) #Go to pickup position for selected Envelope
+    w = sim.getObjectPose(sim.getObject("/index0"), sim.handle_world)
     current_q = move_to_pose(sim, robot, joints, w, current_q, max_vel, max_accel, max_jerk, duration_s=2.0, metrics=trajectory_metrics)
     
-    
-    w = sim.getObjectPose(sim.getObject("/index0buffer"), sim.handle_world) #Go to buffer position for selected Envelope
+    w = sim.getObjectPose(sim.getObject("/index0buffer"), sim.handle_world)
     current_q = move_to_pose(sim, robot, joints, w, current_q, max_vel, max_accel, max_jerk, duration_s=3.5, straight_line=True, metrics=trajectory_metrics)
     
-    w = sim.getObjectPose(sim.getObject(default_position), sim.handle_world) #Go to default position
+    w = sim.getObjectPose(sim.getObject(default_position), sim.handle_world)
     current_q = move_to_pose(sim, robot, joints, w, current_q, max_vel, max_accel, max_jerk, duration_s=2.0, metrics=trajectory_metrics)
     
-    print("Script interrupted or finished. Cleaning up simulation.")
+    print("Done. Plotting metrics.")
     sim.stopSimulation()
 
-    # Plot final trajectory metrics
     fig1 = plt.figure('End-Effector Velocity', figsize=(8, 6))
     ax1 = fig1.add_subplot(111)
     ax1.plot(trajectory_metrics['times'], trajectory_metrics['ee_vels'], label='EE Vel Magnitude')
@@ -330,7 +280,6 @@ def main(robot: ERobot) -> None:
     fig3.tight_layout()
     
     plt.show()
-
 
 if __name__ == '__main__':
     robot = CustomRobot()
